@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SAP Partner Weekly Performance Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --sap-blue: #0070f2;
+      --sap-dark: #1a1a2e;
+      --sap-mid: #16213e;
+      --sap-card: #0f3460;
+      --sap-accent: #e94560;
+      --sap-green: #00c897;
+      --sap-yellow: #ffd166;
+      --sap-orange: #f77f00;
+      --sap-red: #ef233c;
+      --text-light: #e0e0e0;
+      --text-muted: #8892b0;
+      --card-bg: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: '72', 'SAP 72', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0a0e1a 0%, #0d1b2a 50%, #0a0e1a 100%);
+      color: var(--text-light);
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: linear-gradient(90deg, #0b1f3a 0%, #0a3055 50%, #0b1f3a 100%);
+      border-bottom: 2px solid var(--sap-blue);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 20px rgba(0,112,242,0.2);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .sap-logo {
+      background: var(--sap-blue);
+      color: #fff;
+      font-weight: 900;
+      font-size: 18px;
+      padding: 6px 14px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+    .header p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .week-badge {
+      background: rgba(0,112,242,0.15);
+      border: 1px solid var(--sap-blue);
+      color: var(--sap-blue);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .refresh-btn {
+      background: var(--sap-blue);
+      color: #fff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .refresh-btn:hover { background: #0060d0; transform: translateY(-1px); }
+    .refresh-btn.loading { opacity: 0.7; cursor: not-allowed; }
+
+    /* ── UPLOAD ZONE ── */
+    .upload-zone {
+      margin: 24px 32px;
+      border: 2px dashed rgba(0,112,242,0.4);
+      border-radius: 12px;
+      padding: 28px;
+      text-align: center;
+      background: rgba(0,112,242,0.04);
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--sap-blue);
+      background: rgba(0,112,242,0.1);
+    }
+    .upload-zone input { display: none; }
+    .upload-zone label {
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .upload-icon { font-size: 36px; }
+    .upload-zone h3 { font-size: 16px; color: var(--sap-blue); }
+    .upload-zone p { font-size: 13px; color: var(--text-muted); }
+    .file-name {
+      display: none;
+      margin-top: 8px;
+      background: rgba(0,200,151,0.1);
+      border: 1px solid var(--sap-green);
+      color: var(--sap-green);
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+    }
+    .file-name.show { display: inline-block; }
+
+    /* ── DASHBOARD CONTENT ── */
+    #dashboard { padding: 0 32px 40px; display: none; }
+    #dashboard.show { display: block; }
+
+    /* ── SECTION TITLES ── */
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--sap-blue);
+      margin: 28px 0 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title::before {
+      content: '';
+      width: 4px; height: 18px;
+      background: var(--sap-blue);
+      border-radius: 2px;
+    }
+
+    /* ── KPI GRID ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 6px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 16px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .kpi-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+    .kpi-card.blue::after { background: var(--sap-blue); }
+    .kpi-card.green::after { background: var(--sap-green); }
+    .kpi-card.yellow::after { background: var(--sap-yellow); }
+    .kpi-card.orange::after { background: var(--sap-orange); }
+    .kpi-card.red::after { background: var(--sap-red); }
+    .kpi-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+    .kpi-value { font-size: 28px; font-weight: 800; color: #fff; line-height: 1; }
+    .kpi-value.currency::before { content: '€'; font-size: 16px; vertical-align: super; margin-right: 2px; color: var(--text-muted); }
+    .kpi-sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+    .kpi-icon { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 28px; opacity: 0.12; }
+
+    /* ── CHARTS ROW ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 4px;
+    }
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      min-height: 240px;
+    }
+    .chart-card h4 { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+    .chart-wrapper { position: relative; height: 180px; }
+
+    /* ── PARTNER CARDS ── */
+    .partner-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+    }
+    .partner-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .partner-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,0.4); }
+    .partner-header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .partner-header.gold { background: linear-gradient(90deg, rgba(255,209,102,0.15), transparent); border-bottom: 1px solid rgba(255,209,102,0.2); }
+    .partner-header.silver { background: linear-gradient(90deg, rgba(192,192,192,0.12), transparent); border-bottom: 1px solid rgba(192,192,192,0.2); }
+    .partner-header.platinum { background: linear-gradient(90deg, rgba(0,200,151,0.15), transparent); border-bottom: 1px solid rgba(0,200,151,0.2); }
+    .partner-name { font-size: 15px; font-weight: 700; color: #fff; }
+    .partner-tier {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .tier-gold { background: rgba(255,209,102,0.2); color: #ffd166; border: 1px solid rgba(255,209,102,0.3); }
+    .tier-silver { background: rgba(192,192,192,0.15); color: #c0c0c0; border: 1px solid rgba(192,192,192,0.25); }
+    .tier-platinum { background: rgba(0,200,151,0.15); color: #00c897; border: 1px solid rgba(0,200,151,0.25); }
+    .partner-body { padding: 14px 18px; }
+    .partner-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .metric-box {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .metric-box .m-val { font-size: 20px; font-weight: 800; color: #fff; }
+    .metric-box .m-lbl { font-size: 10px; color: var(--text-muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .partner-accounts { margin-top: 10px; }
+    .acc-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .acc-row:last-child { border-bottom: none; }
+    .acc-name { color: var(--text-light); font-weight: 500; }
+    .acc-right { display: flex; align-items: center; gap: 8px; }
+    .health-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block;
+    }
+    .health-green { background: var(--sap-green); box-shadow: 0 0 6px var(--sap-green); }
+    .health-yellow { background: var(--sap-yellow); box-shadow: 0 0 6px var(--sap-yellow); }
+    .health-red { background: var(--sap-red); box-shadow: 0 0 6px var(--sap-red); }
+    .acc-status {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+    .status-active { background: rgba(0,200,151,0.12); color: var(--sap-green); }
+    .status-renewal { background: rgba(255,209,102,0.12); color: var(--sap-yellow); }
+    .status-disc { background: rgba(239,35,60,0.12); color: var(--sap-red); }
+
+    /* ── OPPORTUNITIES TABLE ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      background: rgba(0,112,242,0.12);
+      color: var(--sap-blue);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid rgba(0,112,242,0.2);
+      white-space: nowrap;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    td { padding: 9px 12px; color: var(--text-light); vertical-align: middle; }
+    .stage-badge {
+      padding: 2px 9px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .stage-commit { background: rgba(0,200,151,0.15); color: var(--sap-green); }
+    .stage-probable { background: rgba(255,209,102,0.15); color: var(--sap-yellow); }
+    .stage-upside { background: rgba(239,35,60,0.12); color: var(--sap-red); }
+    .close-week { background: rgba(0,112,242,0.15); color: var(--sap-blue); padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
+    .deal-score {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .score-high { background: rgba(0,200,151,0.2); color: var(--sap-green); }
+    .score-mid { background: rgba(255,209,102,0.2); color: var(--sap-yellow); }
+    .score-low { background: rgba(239,35,60,0.15); color: var(--sap-red); }
+
+    /* ── DG ACTIVITY TABLE ── */
+    .dg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+    .dg-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .dg-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .dg-partner { font-size: 14px; font-weight: 700; color: #fff; }
+    .dg-play { font-size: 11px; color: var(--sap-blue); background: rgba(0,112,242,0.12); padding: 2px 8px; border-radius: 10px; }
+    .dg-score-bar { margin: 10px 0; }
+    .dg-score-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+    .score-track { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+    .score-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+    .dg-stats { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 10px; }
+    .dg-stat { text-align: center; background: rgba(255,255,255,0.03); border-radius: 6px; padding: 7px 4px; }
+    .dg-stat .sv { font-size: 16px; font-weight: 800; color: #fff; }
+    .dg-stat .sl { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── FEEDBACK LOG ── */
+    .feedback-list { display: flex; flex-direction: column; gap: 10px; }
+    .feedback-item {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 14px;
+      align-items: start;
+    }
+    .fb-urgency { font-size: 20px; }
+    .fb-main .fb-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .fb-main .fb-detail { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+    .fb-meta { text-align: right; font-size: 11px; color: var(--text-muted); }
+    .fb-meta .fb-date { color: var(--text-light); font-weight: 600; margin-bottom: 4px; }
+    .fb-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .fb-urgent { background: rgba(239,35,60,0.15); color: var(--sap-red); }
+    .fb-normal { background: rgba(255,209,102,0.12); color: var(--sap-yellow); }
+
+    /* ── FORECAST SUMMARY BAR ── */
+    .forecast-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .fc-block {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    .fc-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 6px; }
+    .fc-val { font-size: 22px; font-weight: 800; }
+    .fc-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    .fc-commit { border-top: 3px solid var(--sap-green); }
+    .fc-probable { border-top: 3px solid var(--sap-yellow); }
+    .fc-upside { border-top: 3px solid var(--sap-red); }
+    .fc-total { border-top: 3px solid var(--sap-blue); }
+
+    /* ── TIMESTAMP ── */
+    .last-updated {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 24px 0 8px;
+    }
+
+    /* ── LOADING STATE ── */
+    .loading-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .loading-state .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--sap-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state .es-icon { font-size: 52px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state h3 { font-size: 18px; color: var(--text-light); margin-bottom: 8px; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .charts-row { grid-template-columns: 1fr; }
+      .partner-grid { grid-template-columns: 1fr; }
+      .header { flex-direction: column; gap: 12px; }
+      #dashboard { padding: 0 16px 40px; }
+      .upload-zone { margin: 16px; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="sap-logo">SAP</div>
+    <div>
+      <h1>Partner Weekly Performance Dashboard</h1>
+      <p id="headerSubtitle">Demand Generation &amp; Forecast Intelligence Tool</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="week-badge" id="weekBadge">W44 · Oct 26, 2026</span>
+    <button class="refresh-btn" onclick="triggerFileSelect()">
+      <span id="refreshIcon">⟳</span> Load / Refresh Excel
+    </button>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFile(event)" />
+  </div>
+</div>
+
+<!-- UPLOAD ZONE -->
+<div class="upload-zone" id="uploadZone"
+     ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+  <label for="fileInput2">
+    <div class="upload-icon">📊</div>
+    <h3>Drop your SAP Partner Excel file here</h3>
+    <p>Or click to select <strong>SAP_Partner_Weekly_Tracker.xlsx</strong></p>
+    <p style="margin-top:6px;font-size:11px">The dashboard updates automatically every time you load a new version of the file</p>
+    <span class="file-name" id="fileName"></span>
+  </label>
+  <input type="file" id="fileInput2" accept=".xlsx,.xls" onchange="handleFile(event)" />
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+
+  <!-- ── KPI SNAPSHOT ── -->
+  <div class="section-title">⚡ Weekly Performance Snapshot</div>
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <!-- ── CHARTS ── -->
+  <div class="section-title">📊 Partner Performance Overview</div>
+  <div class="charts-row">
+    <div class="chart-card">
+      <h4>Leads &amp; MQLs by Partner</h4>
+      <div class="chart-wrapper"><canvas id="chartLeads"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h4>Pipeline Value by Partner (€)</h4>
+      <div class="chart-wrapper"><canvas id="chartPipeline"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h4>Deal Stage Distribution</h4>
+      <div class="chart-wrapper"><canvas id="chartStages"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── FORECAST ── -->
+  <div class="section-title">📈 Forecast Summary</div>
+  <div class="forecast-bar" id="forecastBar"></div>
+
+  <!-- ── OPPORTUNITIES ── -->
+  <div class="section-title">🎯 Opportunity Pipeline</div>
+  <div class="table-wrap">
+    <table id="oppTable">
+      <thead>
+        <tr>
+          <th>Opp ID</th>
+          <th>Account</th>
+          <th>Partner</th>
+          <th>Solution</th>
+          <th>Stage</th>
+          <th>ACV (€)</th>
+          <th>TCV (€)</th>
+          <th>Close Date</th>
+          <th>Deal Health</th>
+          <th>Score</th>
+          <th>Next Step</th>
+          <th>Close This Week?</th>
+        </tr>
+      </thead>
+      <tbody id="oppBody"></tbody>
+    </table>
+  </div>
+
+  <!-- ── PARTNER CARDS ── -->
+  <div class="section-title">🤝 Partner Status Cards</div>
+  <div class="partner-grid" id="partnerGrid"></div>
+
+  <!-- ── DG ACTIVITY ── -->
+  <div class="section-title">📣 Demand Generation Activity</div>
+  <div class="dg-grid" id="dgGrid"></div>
+
+  <!-- ── ACCOUNT FEEDBACK ── -->
+  <div class="section-title">💬 Account Feedback &amp; Intelligence Log</div>
+  <div class="feedback-list" id="feedbackList"></div>
+
+  <div class="last-updated" id="lastUpdated"></div>
+</div>
+
+<!-- ──────────────────────────────────────── -->
+<script>
+  let charts = {};
+
+  // ── FILE INPUT TRIGGERS ──────────────────
+  function triggerFileSelect() {
+    document.getElementById('fileInput').click();
+  }
+  function onDragOver(e) { e.preventDefault(); document.getElementById('uploadZone').classList.add('drag-over'); }
+  function onDragLeave(e) { document.getElementById('uploadZone').classList.remove('drag-over'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('uploadZone').classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  }
+
+  function handleFile(e) {
+    const file = e.target.files[0];
+    if (file) processFile(file);
+  }
+
+  // ── PROCESS EXCEL ────────────────────────
+  function processFile(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: 'array', cellDates: true });
+
+        const sheets = {};
+        wb.SheetNames.forEach(name => {
+          sheets[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
+        });
+
+        // Show file name
+        document.getElementById('fileName').textContent = '✓ ' + file.name;
+        document.getElementById('fileName').classList.add('show');
+
+        // Render
+        renderDashboard(wb, sheets, file.name);
+
+      } catch(err) {
+        alert('Could not parse file: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // ── MAIN RENDER ─────────────────────────
+  function renderDashboard(wb, sheets, filename) {
+    // Parse tabs
+    const accountData   = parseAccounts(wb);
+    const dgData        = parseDG(wb);
+    const forecastData  = parseForecast(wb);
+    const feedbackData  = parseFeedback(wb);
+
+    // Show dashboard
+    document.getElementById('uploadZone').style.display = 'none';
+    const dash = document.getElementById('dashboard');
+    dash.classList.add('show');
+
+    renderKPIs(accountData, dgData, forecastData);
+    renderCharts(accountData, dgData, forecastData);
+    renderForecastBar(forecastData);
+    renderOpportunities(forecastData);
+    renderPartnerCards(accountData, dgData, forecastData);
+    renderDGCards(dgData);
+    renderFeedback(feedbackData);
+
+    document.getElementById('lastUpdated').textContent =
+      'Dashboard loaded from: ' + filename + ' · ' + new Date().toLocaleString();
+  }
+
+  // ── PARSE HELPERS ────────────────────────
+  function getSheet(wb, keywords) {
+    for (const name of wb.SheetNames) {
+      const n = name.toLowerCase();
+      if (keywords.some(k => n.includes(k))) return wb.Sheets[name];
+    }
+    return null;
+  }
+
+  function sheetToRows(sheet) {
+    if (!sheet) return [];
+    return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  }
+
+  // Flatten raw sheet into rows skipping header noise — find the header row
+  function findHeaderRows(wb, sheetName) {
+    const sheet = wb.Sheets[sheetName];
+    if (!sheet) return [];
+    // Look for rows where first cell looks like a header
+    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:Z1');
+    const rows = [];
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const row = {};
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = sheet[XLSX.utils.encode_cell({r, c})];
+        row[c] = cell ? cell.v : '';
+      }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function parseAccounts(wb) {
+    // Try multiple likely sheet names
+    const keywords = ['account', 'tracker'];
+    let rows = [];
+    for (const name of wb.SheetNames) {
+      if (name.toLowerCase().includes('account')) {
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false });
+        break;
+      }
+    }
+    // filter out rows without Account ID pattern
+    return rows.filter(r => {
+      const vals = Object.values(r);
+      return vals.some(v => String(v).match(/^ACC\d+/));
+    }).map(r => {
+      // Find values by key pattern (column headers may vary)
+      return normalizeAccountRow(r);
+    });
+  }
+
+  function normalizeAccountRow(r) {
+    const keys = Object.keys(r);
+    const get = (...patterns) => {
+      for (const p of patterns) {
+        const k = keys.find(k => k.toLowerCase().includes(p.toLowerCase()));
+        if (k) return r[k] || '';
+      }
+      return '';
+    };
+    return {
+      id: get('Account ID', 'ID'),
+      name: get('Account Name', 'Account'),
+      industry: get('Industry'),
+      country: get('Country'),
+      partnerOwner: get('Account Owner (Partner)', 'Partner'),
+      sapOwner: get('SAP Account Owner', 'SAP'),
+      classification: get('Classification'),
+      model: get('RISE/GROW', 'RISE'),
+      segment: get('Segment'),
+      contractStatus: get('Contract Status', 'Status'),
+      acv: get('ACV', 'ACV (€)'),
+      contractEnd: get('Contract End', 'End Date'),
+      lastEngagement: get('Last Engagement', 'Engagement Date'),
+      health: get('Relationship Health', 'Health'),
+      openOpps: get('Open Opps', 'Opps (#)', 'Open Opps (#)'),
+      pipelineValue: get('Pipeline Value', 'Pipeline'),
+      lastCall: get('Last Call Date', 'Last Call'),
+      tier: get('Partner Tier', 'Tier'),
+      priority: get('Strategic Priority', 'Priority'),
+      feedbackFlag: get('Feedback Flag', 'Flag'),
+      notes: get('Notes', 'Next Step'),
+    };
+  }
+
+  function parseDG(wb) {
+    let rows = [];
+    for (const name of wb.SheetNames) {
+      if (name.toLowerCase().includes('demand') || name.toLowerCase().includes('dg') || name.toLowerCase().includes('weekly')) {
+        const candidate = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false })
+          .filter(r => Object.values(r).some(v => /W\d+/i.test(String(v)) || String(v).toLowerCase().includes('partner')));
+        if (candidate.length > 0) { rows = candidate; break; }
+      }
+    }
+    return rows.filter(r => {
+      const vals = Object.values(r);
+      return vals.some(v => String(v).match(/W\d+/i));
+    }).map(r => normalizeDGRow(r));
+  }
+
+  function normalizeDGRow(r) {
+    const keys = Object.keys(r);
+    const get = (...patterns) => {
+      for (const p of patterns) {
+        const k = keys.find(k => k.toLowerCase().includes(p.toLowerCase()));
+        if (k !== undefined) return r[k] || '';
+      }
+      return '';
+    };
+    return {
+      week: get('Week'),
+      partner: get('Partner Name', 'Partner'),
+      salesPlay: get('Sales Play', 'Play'),
+      campaign: get('Campaign', 'Activity'),
+      industry: get('Target Industry', 'Industry'),
+      leads: parseInt(get('# Leads Generated', 'Leads')) || 0,
+      mqls: parseInt(get('# MQLs', 'MQLs')) || 0,
+      sqls: parseInt(get('# SQLs', 'SQLs')) || 0,
+      tal: parseInt(get('New TAL', 'TAL')) || 0,
+      icp: get('ICP Alignment', 'ICP'),
+      channel: get('Channel Used', 'Channel'),
+      linkedin: parseInt(get('LinkedIn Activities', 'LinkedIn')) || 0,
+      events: parseInt(get('Events', 'Webinars')) || 0,
+      emailCampaigns: parseInt(get('Email Campaigns', 'Email')) || 0,
+      demos: parseInt(get('Demo Delivered', 'Demo')) || 0,
+      quality: parseFloat(get('DG Quality Score', 'Quality')) || 0,
+      notes: get('Notes'),
+    };
+  }
+
+  function parseForecast(wb) {
+    let rows = [];
+    for (const name of wb.SheetNames) {
+      if (name.toLowerCase().includes('forecast') || name.toLowerCase().includes('opportunit')) {
+        const candidate = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false });
+        const opps = candidate.filter(r => Object.values(r).some(v => String(v).match(/^OPP\d+/)));
+        if (opps.length > 0) { rows = opps; break; }
+      }
+    }
+    return rows.map(r => normalizeForecastRow(r));
+  }
+
+  function normalizeForecastRow(r) {
+    const keys = Object.keys(r);
+    const get = (...patterns) => {
+      for (const p of patterns) {
+        const k = keys.find(k => k.toLowerCase().includes(p.toLowerCase()));
+        if (k !== undefined) return r[k] || '';
+      }
+      return '';
+    };
+    return {
+      oppId: get('Opp ID', 'ID'),
+      account: get('Account Name', 'Account'),
+      partner: get('Partner Name', 'Partner'),
+      industry: get('Industry'),
+      solution: get('Solution Area', 'Solution'),
+      oppName: get('Opportunity Name', 'Opportunity'),
+      status: get('Status'),
+      stage: get('Stage'),
+      revenueType: get('Revenue Type', 'Revenue'),
+      closeDate: get('Close Date', 'Close'),
+      quarter: get('Quarter'),
+      acv: parseFloat(String(get('ACV Forecast', 'ACV')).replace(/[^0-9.]/g,'')) || 0,
+      tcv: parseFloat(String(get('TCV')).replace(/[^0-9.]/g,'')) || 0,
+      drm: get('DRM Category', 'DRM'),
+      health: get('Deal Health', 'Health'),
+      score: parseInt(get('Deal Score', 'Score')) || 0,
+      lastActivity: get('Last Activity Date', 'Last Activity'),
+      buyer: get('Buyer Name', 'Buyer'),
+      buyerRole: get('Buyer Role', 'Role'),
+      nextStep: get('Next Step'),
+      nextStepOwner: get('Next Step Owner'),
+      nextStepDue: get('Next Step Due'),
+      confidence: get('Partner Confidence', 'Confidence'),
+      closeThisWeek: get('Potential to Close This Week', 'Close This Week'),
+      sapOppId: get('SAP Opportunity ID', 'SAP Opp'),
+      notes: get('Notes'),
+    };
+  }
+
+  function parseFeedback(wb) {
+    let rows = [];
+    for (const name of wb.SheetNames) {
+      if (name.toLowerCase().includes('feedback') || name.toLowerCase().includes('intel')) {
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false });
+        break;
+      }
+    }
+    return rows.filter(r => {
+      const vals = Object.values(r);
+      return vals.some(v => String(v).length > 10);
+    }).map(r => normalizeFeedbackRow(r));
+  }
+
+  function normalizeFeedbackRow(r) {
+    const keys = Object.keys(r);
+    const get = (...patterns) => {
+      for (const p of patterns) {
+        const k = keys.find(k => k.toLowerCase().includes(p.toLowerCase()));
+        if (k !== undefined) return r[k] || '';
+      }
+      return '';
+    };
+    return {
+      date: get('Date'),
+      account: get('Account Name', 'Account'),
+      partner: get('Partner Name', 'Partner'),
+      type: get('Feedback Type', 'Type'),
+      feedback: get('Feedback / Intel', 'Feedback'),
+      urgency: get('Urgency'),
+      action: get('Action Required', 'Action'),
+      owner: get('Action Owner', 'Owner'),
+      due: get('Due Date', 'Due'),
+      status: get('Status'),
+      competitive: get('Competitive Intel', 'Competitive'),
+      expansion: get('Expansion Signal', 'Expansion'),
+      blocker: get('Blocker'),
+    };
+  }
+
+  // ── RENDER KPIs ──────────────────────────
+  function renderKPIs(accounts, dg, forecast) {
+    const totalPartners = [...new Set(accounts.map(a => a.partnerOwner).filter(Boolean))].length || 0;
+    const totalLeads = dg.reduce((s, r) => s + r.leads, 0);
+    const totalMQLs = dg.reduce((s, r) => s + r.mqls, 0);
+    const totalSQLs = dg.reduce((s, r) => s + r.sqls, 0);
+    const openOpps = forecast.filter(r => r.status.toLowerCase() === 'open').length;
+    const totalACV = forecast.reduce((s, r) => s + r.acv, 0);
+    const atRisk = forecast.filter(r => r.health.toLowerCase().includes('risk') || r.health.includes('🔴')).length;
+    const closeThisWeek = forecast.filter(r => r.closeThisWeek.toLowerCase() === 'yes').length;
+    const totalLinkedIn = dg.reduce((s, r) => s + r.linkedin, 0);
+    const totalDemos = dg.reduce((s, r) => s + r.demos, 0);
+    const discontinuedAccounts = accounts.filter(a =>
+      a.contractStatus.toLowerCase().includes('disc') ||
+      a.contractStatus.toLowerCase().includes('terminat') ||
+      a.contractStatus.toLowerCase().includes('churned')
+    ).length;
+    const renewalAccounts = accounts.filter(a => a.contractStatus.toLowerCase().includes('renewal')).length;
+
+    const kpis = [
+      { label: 'Active Partners', value: totalPartners, color: 'blue', icon: '🤝' },
+      { label: 'DG Leads (Week)', value: totalLeads, color: 'green', icon: '🎯' },
+      { label: 'MQLs', value: totalMQLs, color: 'green', icon: '✅' },
+      { label: 'SQLs', value: totalSQLs, color: 'yellow', icon: '🔥' },
+      { label: 'Open Opportunities', value: openOpps, color: 'blue', icon: '📂' },
+      { label: 'Pipeline ACV', value: fmtCurrency(totalACV), color: 'green', isCurrency: false, icon: '💰' },
+      { label: 'Deals At Risk', value: atRisk, color: 'red', icon: '⚠️' },
+      { label: 'Close This Week', value: closeThisWeek, color: 'yellow', icon: '🏁' },
+      { label: 'LinkedIn Activities', value: totalLinkedIn, color: 'blue', icon: '💼' },
+      { label: 'Demos Delivered', value: totalDemos, color: 'orange', icon: '🎬' },
+      { label: 'Accounts at Renewal', value: renewalAccounts, color: 'yellow', icon: '🔄' },
+      { label: 'Discontinued', value: discontinuedAccounts, color: 'red', icon: '🚫' },
+    ];
+
+    document.getElementById('kpiGrid').innerHTML = kpis.map(k => `
+      <div class="kpi-card ${k.color}">
+        <div class="kpi-label">${k.label}</div>
+        <div class="kpi-value">${k.value}</div>
+        <div class="kpi-icon">${k.icon}</div>
+      </div>
+    `).join('');
+  }
+
+  // ── RENDER CHARTS ────────────────────────
+  function renderCharts(accounts, dg, forecast) {
+    // Destroy old charts
+    Object.values(charts).forEach(c => c.destroy());
+    charts = {};
+
+    const partners = [...new Set(dg.map(d => d.partner).filter(Boolean))];
+    const colors = ['#0070f2','#00c897','#ffd166','#f77f00','#ef233c','#a78bfa'];
+
+    // Chart 1: Leads & MQLs by partner (bar)
+    const leadsData = partners.map(p => dg.filter(d => d.partner === p).reduce((s, d) => s + d.leads, 0));
+    const mqlsData  = partners.map(p => dg.filter(d => d.partner === p).reduce((s, d) => s + d.mqls, 0));
+
+    charts.leads = new Chart(document.getElementById('chartLeads'), {
+      type: 'bar',
+      data: {
+        labels: partners.map(p => p.split(' ')[0]),
+        datasets: [
+          { label: 'Leads', data: leadsData, backgroundColor: 'rgba(0,112,242,0.7)', borderRadius: 4 },
+          { label: 'MQLs', data: mqlsData, backgroundColor: 'rgba(0,200,151,0.7)', borderRadius: 4 },
+        ]
+      },
+      options: chartOpts('Leads & MQLs')
+    });
+
+    // Chart 2: Pipeline by partner (horizontal bar)
+    const partnerAccounts = [...new Set(accounts.map(a => a.partnerOwner).filter(Boolean))];
+    const pipelineByPartner = partnerAccounts.map(p => {
+      const partnerAccs = accounts.filter(a => a.partnerOwner === p);
+      return partnerAccs.reduce((s, a) => s + (parseFloat(String(a.pipelineValue).replace(/[^0-9.]/g,'')) || 0), 0);
+    });
+
+    charts.pipeline = new Chart(document.getElementById('chartPipeline'), {
+      type: 'bar',
+      data: {
+        labels: partnerAccounts.map(p => p.split(' ')[0]),
+        datasets: [{
+          label: 'Pipeline (€)',
+          data: pipelineByPartner,
+          backgroundColor: colors.slice(0, partnerAccounts.length),
+          borderRadius: 4,
+        }]
+      },
+      options: { ...chartOpts('Pipeline'), indexAxis: 'y' }
+    });
+
+    // Chart 3: Stage distribution (doughnut)
+    const stages = {};
+    forecast.forEach(f => {
+      const s = f.stage || 'Unknown';
+      stages[s] = (stages[s] || 0) + 1;
+    });
+
+    charts.stages = new Chart(document.getElementById('chartStages'), {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(stages),
+        datasets: [{
+          data: Object.values(stages),
+          backgroundColor: ['rgba(0,200,151,0.8)', 'rgba(255,209,102,0.8)', 'rgba(239,35,60,0.8)', 'rgba(0,112,242,0.8)'],
+          borderWidth: 2,
+          borderColor: '#0a0e1a',
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#8892b0', font: { size: 11 }, padding: 12 } },
+        },
+        cutout: '65%',
+      }
+    });
+  }
+
+  function chartOpts(label) {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8892b0', font: { size: 11 } } },
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8892b0', font: { size: 10 } } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8892b0', font: { size: 10 } } },
+      }
+    };
+  }
+
+  // ── RENDER FORECAST BAR ──────────────────
+  function renderForecastBar(forecast) {
+    const committed = forecast.filter(f => f.stage.toLowerCase() === 'commit').reduce((s,f)=>s+f.acv,0);
+    const probable  = forecast.filter(f => f.stage.toLowerCase() === 'probable').reduce((s,f)=>s+f.acv,0);
+    const upside    = forecast.filter(f => f.stage.toLowerCase() === 'upside').reduce((s,f)=>s+f.acv,0);
+    const total     = committed + probable + upside;
+    const closeWeek = forecast.filter(f => f.closeThisWeek.toLowerCase() === 'yes').length;
+    const atRisk    = forecast.filter(f => f.health.toLowerCase().includes('risk') || f.health.includes('🔴')).length;
+
+    document.getElementById('forecastBar').innerHTML = `
+      <div class="fc-block fc-commit">
+        <div class="fc-label">💚 Committed</div>
+        <div class="fc-val" style="color:var(--sap-green)">${fmtCurrency(committed)}</div>
+        <div class="fc-sub">${forecast.filter(f=>f.stage.toLowerCase()==='commit').length} deals</div>
+      </div>
+      <div class="fc-block fc-probable">
+        <div class="fc-label">🟡 Probable</div>
+        <div class="fc-val" style="color:var(--sap-yellow)">${fmtCurrency(probable)}</div>
+        <div class="fc-sub">${forecast.filter(f=>f.stage.toLowerCase()==='probable').length} deals</div>
+      </div>
+      <div class="fc-block fc-upside">
+        <div class="fc-label">🔴 Upside</div>
+        <div class="fc-val" style="color:var(--sap-red)">${fmtCurrency(upside)}</div>
+        <div class="fc-sub">${forecast.filter(f=>f.stage.toLowerCase()==='upside').length} deals</div>
+      </div>
+      <div class="fc-block fc-total" style="border-top-color:var(--sap-blue)">
+        <div class="fc-label">📊 Total Pipeline</div>
+        <div class="fc-val" style="color:#fff">${fmtCurrency(total)}</div>
+        <div class="fc-sub">${forecast.length} total deals</div>
+      </div>
+      <div class="fc-block" style="border-top:3px solid var(--sap-yellow)">
+        <div class="fc-label">🏁 Close This Week</div>
+        <div class="fc-val" style="color:var(--sap-yellow)">${closeWeek}</div>
+        <div class="fc-sub">deals expected to close</div>
+      </div>
+      <div class="fc-block" style="border-top:3px solid var(--sap-red)">
+        <div class="fc-label">⚠️ At-Risk Deals</div>
+        <div class="fc-val" style="color:var(--sap-red)">${atRisk}</div>
+        <div class="fc-sub">need attention</div>
+      </div>
+    `;
+  }
+
+  // ── RENDER OPPORTUNITIES TABLE ───────────
+  function renderOpportunities(forecast) {
+    if (forecast.length === 0) {
+      document.getElementById('oppBody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:30px">No opportunity data found</td></tr>';
+      return;
+    }
+    document.getElementById('oppBody').innerHTML = forecast.map(f => {
+      const stageCls = f.stage.toLowerCase() === 'commit' ? 'commit' : f.stage.toLowerCase() === 'probable' ? 'probable' : 'upside';
+      const scoreCls = f.score >= 8 ? 'high' : f.score >= 5 ? 'mid' : 'low';
+      const healthDot = f.health.includes('Healthy') || f.health.includes('🟢') ? 'health-green' :
+                        f.health.includes('Attention') || f.health.includes('🟡') ? 'health-yellow' : 'health-red';
+      return `<tr>
+        <td><code style="font-size:11px;color:var(--sap-blue)">${f.oppId}</code></td>
+        <td style="font-weight:600">${f.account}</td>
+        <td>${f.partner}</td>
+        <td>${f.solution}</td>
+        <td><span class="stage-badge stage-${stageCls}">${f.stage}</span></td>
+        <td style="font-weight:700;color:var(--sap-green)">${fmtCurrency(f.acv)}</td>
+        <td style="color:var(--text-muted)">${fmtCurrency(f.tcv)}</td>
+        <td style="font-size:11px">${f.closeDate}</td>
+        <td><span class="health-dot ${healthDot}"></span> ${f.health.replace(/[🟢🟡🔴]/g,'').trim()}</td>
+        <td><span class="deal-score score-${scoreCls}">${f.score}</span></td>
+        <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.nextStep}">${f.nextStep}</td>
+        <td>${f.closeThisWeek.toLowerCase() === 'yes' ? '<span class="close-week">✓ YES</span>' : '<span style="color:var(--text-muted);font-size:11px">—</span>'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── RENDER PARTNER CARDS ─────────────────
+  function renderPartnerCards(accounts, dg, forecast) {
+    const partners = [...new Set(accounts.map(a => a.partnerOwner).filter(Boolean))];
+
+    if (partners.length === 0) {
+      document.getElementById('partnerGrid').innerHTML = '<p style="color:var(--text-muted)">No partner data found</p>';
+      return;
+    }
+
+    document.getElementById('partnerGrid').innerHTML = partners.map(partner => {
+      const partnerAccounts = accounts.filter(a => a.partnerOwner === partner);
+      const partnerDG = dg.filter(d => d.partner === partner);
+      const partnerForecast = forecast.filter(f => f.partner === partner);
+
+      const tier = partnerAccounts[0]?.tier || 'Silver';
+      const tierClass = tier.toLowerCase();
+      const tierBadgeClass = `tier-${tier.toLowerCase()}`;
+
+      const totalLeads = partnerDG.reduce((s, d) => s + d.leads, 0);
+      const totalMQLs  = partnerDG.reduce((s, d) => s + d.mqls, 0);
+      const openOpps   = partnerForecast.filter(f => f.status.toLowerCase() === 'open').length;
+      const totalACV   = partnerForecast.reduce((s, f) => s + f.acv, 0);
+      const calls      = partnerAccounts.filter(a => a.lastCall).length;
+      const meetings   = partnerDG.reduce((s, d) => s + d.events, 0);
+      const linkedin   = partnerDG.reduce((s, d) => s + d.linkedin, 0);
+      const demos      = partnerDG.reduce((s, d) => s + d.demos, 0);
+      const discontinued = partnerAccounts.filter(a =>
+        a.contractStatus.toLowerCase().includes('disc') ||
+        a.contractStatus.toLowerCase().includes('terminat')
+      ).length;
+
+      return `
+        <div class="partner-card">
+          <div class="partner-header ${tierClass}">
+            <div>
+              <div class="partner-name">${partner}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${partnerAccounts.length} account(s) · ${tier} Partner</div>
+            </div>
+            <span class="partner-tier ${tierBadgeClass}">${tier}</span>
+          </div>
+          <div class="partner-body">
+            <div class="partner-metrics">
+              <div class="metric-box">
+                <div class="m-val">${totalLeads}</div>
+                <div class="m-lbl">Leads</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-val">${openOpps}</div>
+                <div class="m-lbl">Open Opps</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-val" style="font-size:14px">${fmtCurrencyShort(totalACV)}</div>
+                <div class="m-lbl">Pipeline</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-val">${calls}</div>
+                <div class="m-lbl">Calls</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-val">${meetings}</div>
+                <div class="m-lbl">Meetings</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-val">${linkedin}</div>
+                <div class="m-lbl">LinkedIn</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-val">${demos}</div>
+                <div class="m-lbl">Demos</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-val">${totalMQLs}</div>
+                <div class="m-lbl">MQLs</div>
+              </div>
+              <div class="metric-box" style="${discontinued > 0 ? 'border-color:rgba(239,35,60,0.3)' : ''}">
+                <div class="m-val" style="${discontinued > 0 ? 'color:var(--sap-red)' : ''}">${discontinued}</div>
+                <div class="m-lbl">Disc.</div>
+              </div>
+            </div>
+            <div class="partner-accounts">
+              ${partnerAccounts.map(a => {
+                const healthClass = a.health.includes('Healthy') || a.health.includes('🟢') ? 'health-green' :
+                                    a.health.includes('🟡') ? 'health-yellow' : 'health-red';
+                const statusClass = a.contractStatus.toLowerCase().includes('active') ? 'status-active' :
+                                    a.contractStatus.toLowerCase().includes('renewal') ? 'status-renewal' : 'status-disc';
+                return `
+                  <div class="acc-row">
+                    <span class="acc-name">${a.name}</span>
+                    <div class="acc-right">
+                      <span class="health-dot ${healthClass}"></span>
+                      <span class="acc-status ${statusClass}">${a.contractStatus}</span>
+                      <span style="font-size:11px;color:var(--text-muted)">${a.feedbackFlag || ''}</span>
+                    </div>
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── RENDER DG CARDS ──────────────────────
+  function renderDGCards(dg) {
+    if (dg.length === 0) {
+      document.getElementById('dgGrid').innerHTML = '<p style="color:var(--text-muted)">No DG activity data found</p>';
+      return;
+    }
+    const colors = ['#0070f2','#00c897','#ffd166','#f77f00','#ef233c'];
+    document.getElementById('dgGrid').innerHTML = dg.map((d, i) => {
+      const qualityPct = (d.quality / 5) * 100;
+      const barColor = d.quality >= 4 ? '#00c897' : d.quality >= 3 ? '#ffd166' : '#ef233c';
+      return `
+        <div class="dg-card">
+          <div class="dg-header">
+            <div>
+              <div class="dg-partner">${d.partner}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${d.week} · ${d.industry}</div>
+            </div>
+            <span class="dg-play">${(d.salesPlay || '').split(' ').slice(0,3).join(' ')}</span>
+          </div>
+          <div class="dg-score-bar">
+            <div class="dg-score-label">
+              <span>DG Quality Score</span>
+              <span style="color:${barColor};font-weight:700">${d.quality}/5</span>
+            </div>
+            <div class="score-track">
+              <div class="score-fill" style="width:${qualityPct}%;background:${barColor}"></div>
+            </div>
+          </div>
+          <div class="dg-stats">
+            <div class="dg-stat"><div class="sv">${d.leads}</div><div class="sl">Leads</div></div>
+            <div class="dg-stat"><div class="sv">${d.mqls}</div><div class="sl">MQLs</div></div>
+            <div class="dg-stat"><div class="sv">${d.sqls}</div><div class="sl">SQLs</div></div>
+            <div class="dg-stat"><div class="sv">${d.tal}</div><div class="sl">TAL</div></div>
+            <div class="dg-stat"><div class="sv">${d.linkedin}</div><div class="sl">LinkedIn</div></div>
+            <div class="dg-stat"><div class="sv">${d.events}</div><div class="sl">Events</div></div>
+            <div class="dg-stat"><div class="sv">${d.emailCampaigns}</div><div class="sl">Emails</div></div>
+            <div class="dg-stat"><div class="sv">${d.demos}</div><div class="sl">Demos</div></div>
+          </div>
+          ${d.notes ? `<div style="margin-top:10px;font-size:11px;color:var(--text-muted);font-style:italic;border-top:1px solid var(--border);padding-top:8px">${d.notes}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── RENDER FEEDBACK ──────────────────────
+  function renderFeedback(feedback) {
+    if (feedback.length === 0) {
+      document.getElementById('feedbackList').innerHTML = '<p style="color:var(--text-muted)">No feedback entries found</p>';
+      return;
+    }
+    document.getElementById('feedbackList').innerHTML = feedback.map(f => {
+      const isUrgent = String(f.urgency).includes('Urgent') || String(f.urgency).includes('🚨');
+      const urgIcon = isUrgent ? '🚨' : '⚠️';
+      const tagCls = isUrgent ? 'fb-urgent' : 'fb-normal';
+      return `
+        <div class="feedback-item">
+          <div class="fb-urgency">${urgIcon}</div>
+          <div class="fb-main">
+            <div class="fb-title">${f.account} — <span style="color:var(--text-muted)">${f.partner}</span></div>
+            <div class="fb-detail">${f.feedback}</div>
+            ${f.action ? `<div style="margin-top:6px;font-size:11px;color:var(--sap-blue)">→ Action: ${f.action}</div>` : ''}
+            ${f.blocker ? `<div style="margin-top:4px;font-size:11px;color:var(--sap-red)">🚧 Blocker: ${f.blocker}</div>` : ''}
+            ${f.competitive ? `<div style="margin-top:4px;font-size:11px;color:var(--sap-yellow)">🏴 Competitive: ${f.competitive}</div>` : ''}
+            ${f.expansion ? `<div style="margin-top:4px;font-size:11px;color:var(--sap-green)">📈 Expansion: ${f.expansion}</div>` : ''}
+          </div>
+          <div class="fb-meta">
+            <div class="fb-date">${f.date}</div>
+            <span class="fb-tag ${tagCls}">${f.type || 'Intel'}</span>
+            <div style="margin-top:6px;font-size:10px">Due: ${f.due || '—'}</div>
+            <div style="font-size:10px;color:var(--text-muted)">${f.owner || ''}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── UTILS ────────────────────────────────
+  function fmtCurrency(val) {
+    if (!val || isNaN(val)) return '€0';
+    if (val >= 1000000) return '€' + (val / 1000000).toFixed(2) + 'M';
+    if (val >= 1000) return '€' + (val / 1000).toFixed(0) + 'K';
+    return '€' + val.toLocaleString();
+  }
+  function fmtCurrencyShort(val) {
+    if (!val || isNaN(val)) return '€0';
+    if (val >= 1000000) return '€' + (val/1000000).toFixed(1) + 'M';
+    return '€' + (val/1000).toFixed(0) + 'K';
+  }
+</script>
+</body>
+</html>
